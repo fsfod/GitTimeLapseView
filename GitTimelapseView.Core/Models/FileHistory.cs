@@ -20,7 +20,18 @@ namespace GitTimelapseView.Core.Models
             FilePath = filePath;
             try
             {
-                GitRootPath = Repository.Discover(filePath).Replace(@".git\", string.Empty, StringComparison.Ordinal);
+                var path = Repository.Discover(filePath);
+
+                int workTreeIndex = path.IndexOf(@".git\worktrees\", StringComparison.OrdinalIgnoreCase);
+
+                if (workTreeIndex != -1)
+                {
+                    GitRootPath = path;
+                }
+                else
+                {
+                    GitRootPath = path.Replace(@".git\", string.Empty, StringComparison.Ordinal);
+                }
             }
             catch (Exception)
             {
@@ -44,9 +55,11 @@ namespace GitTimelapseView.Core.Models
             if (Revisions.Any())
                 return;
 
-            var commitIds = GetFileCommitIDs(logger).Reverse().ToArray();
             using (var repository = new Repository(GitRootPath))
             {
+                var repoInfo = repository.Info;
+                var commitIds = GetFileCommitIDs(repoInfo.IsBare ? repoInfo.Path : repoInfo.WorkingDirectory, logger).Reverse().ToArray();
+
                 var remoteUrl = repository.FindRemoteUrl();
 
                 var relativeFilePath = repository.MakeRelativeFilePath(FilePath);
@@ -96,7 +109,7 @@ namespace GitTimelapseView.Core.Models
             return revision;
         }
 
-        private IReadOnlyList<string> GetFileCommitIDs(ILogger logger)
+        private IReadOnlyList<string> GetFileCommitIDs(string repoPath, ILogger logger)
         {
             List<string> commitIDs = new();
             var isFirstTime = true;
@@ -105,7 +118,7 @@ namespace GitTimelapseView.Core.Models
             do
             {
                 var args = $"rev-list --first-parent HEAD -- \"{filePath}\"";
-                var result = GitHelpers.RunGitCommand(GitRootPath, args, logger).Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries).ToList();
+                var result = GitHelpers.RunGitCommand(repoPath, args, logger).Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries).ToList();
 
                 if (result.Count == 0)
                     return commitIDs;
